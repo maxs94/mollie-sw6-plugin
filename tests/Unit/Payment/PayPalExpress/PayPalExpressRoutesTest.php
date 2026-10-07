@@ -11,6 +11,8 @@ use Mollie\Shopware\Component\Payment\PayPalExpress\Route\FinishCheckoutResponse
 use Mollie\Shopware\Component\Payment\PayPalExpress\Route\FinishCheckoutRoute;
 use Mollie\Shopware\Component\Payment\PayPalExpress\Route\StartCheckoutResponse;
 use Mollie\Shopware\Component\Payment\PayPalExpress\Route\StartCheckoutRoute;
+use Mollie\Shopware\Component\Router\Exception\RedirectUrlException;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
 use Mollie\Shopware\Component\Settings\Struct\PayPalExpressSettings;
 use Mollie\Shopware\Mollie;
 use Mollie\Shopware\Unit\Fake\FakeSalesChannelContext;
@@ -35,6 +37,7 @@ final class PayPalExpressRoutesTest extends TestCase
     public function setUp(): void
     {
         $this->salesChannelContext = new FakeSalesChannelContext('sc-1', 'cart-token-1');
+        $this->salesChannelContext->setDomainUrls('https://frontend.example');
     }
 
     // ------ StartCheckoutRoute ------
@@ -48,6 +51,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             new FakeSessionGateway($session),
             new FakeCartService($cart),
+            new RedirectUrlValidator(),
         );
 
         $response = $route->startCheckout(new \Symfony\Component\HttpFoundation\Request(), $this->salesChannelContext);
@@ -70,6 +74,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             new FakeSessionGateway($session),
             new FakeCartService($cart),
+            new RedirectUrlValidator(),
         );
 
         $request = new \Symfony\Component\HttpFoundation\Request();
@@ -88,6 +93,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             new FakeSessionGateway($session),
             new FakeCartService($this->buildCartWithItems()),
+            new RedirectUrlValidator(),
         );
 
         $route->startCheckout(new \Symfony\Component\HttpFoundation\Request(), $this->salesChannelContext);
@@ -106,6 +112,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             $sessionGateway,
             new FakeCartService($this->buildCartWithItems()),
+            new RedirectUrlValidator(),
         );
 
         $request = new \Symfony\Component\HttpFoundation\Request([
@@ -119,6 +126,49 @@ final class PayPalExpressRoutesTest extends TestCase
         $this->assertSame('https://frontend.example/checkout/cart', $sessionGateway->getPaypalExpressCancelUrl());
     }
 
+    public function testStartCheckoutRejectsAReturnUrlOutsideTheSalesChannel(): void
+    {
+        $sessionGateway = new FakeSessionGateway($this->buildSession('session-1', 'https://mollie.com/checkout'));
+
+        $route = new StartCheckoutRoute(
+            new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
+            $sessionGateway,
+            new FakeCartService($this->buildCartWithItems()),
+            new RedirectUrlValidator(),
+        );
+
+        $request = new \Symfony\Component\HttpFoundation\Request([
+            StartCheckoutRoute::REDIRECT_URL_PARAMETER => 'https://evil.example/checkout/paypal-return',
+        ]);
+
+        try {
+            $route->startCheckout($request, $this->salesChannelContext);
+            $this->fail('The foreign return url was accepted');
+        } catch (RedirectUrlException) {
+            $this->assertSame('', $sessionGateway->getPaypalExpressRedirectUrl());
+        }
+    }
+
+    public function testStartCheckoutRejectsACancelUrlOutsideTheSalesChannel(): void
+    {
+        $sessionGateway = new FakeSessionGateway($this->buildSession('session-1', 'https://mollie.com/checkout'));
+
+        $route = new StartCheckoutRoute(
+            new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
+            $sessionGateway,
+            new FakeCartService($this->buildCartWithItems()),
+            new RedirectUrlValidator(),
+        );
+
+        $request = new \Symfony\Component\HttpFoundation\Request([
+            StartCheckoutRoute::CANCEL_URL_PARAMETER => 'https://evil.example/checkout/cart',
+        ]);
+
+        $this->expectException(RedirectUrlException::class);
+
+        $route->startCheckout($request, $this->salesChannelContext);
+    }
+
     public function testStartCheckoutLeavesTheUrlsEmptyWhenTheClientNamesNone(): void
     {
         $sessionGateway = new FakeSessionGateway($this->buildSession('session-1', 'https://mollie.com/checkout'));
@@ -127,6 +177,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             $sessionGateway,
             new FakeCartService($this->buildCartWithItems()),
+            new RedirectUrlValidator(),
         );
 
         $route->startCheckout(new \Symfony\Component\HttpFoundation\Request(), $this->salesChannelContext);
@@ -141,6 +192,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(false)),
             new FakeSessionGateway($this->buildSession('session-1')),
             new FakeCartService(new Cart('cart-token')),
+            new RedirectUrlValidator(),
         );
 
         try {
@@ -157,6 +209,7 @@ final class PayPalExpressRoutesTest extends TestCase
             new FakeSettingsService(paypalExpressSettings: new PayPalExpressSettings(true)),
             new FakeSessionGateway($this->buildSession('session-1')),
             new FakeCartService(new Cart('cart-token')),
+            new RedirectUrlValidator(),
         );
 
         try {

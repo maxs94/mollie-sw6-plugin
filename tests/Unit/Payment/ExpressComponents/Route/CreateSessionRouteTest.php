@@ -7,6 +7,8 @@ use Mollie\Shopware\Component\Payment\ExpressComponents\ExpressComponentsExcepti
 use Mollie\Shopware\Component\Payment\ExpressComponents\Route\CreateSessionRoute;
 use Mollie\Shopware\Component\Payment\ExpressMethod\VisibilityRestriction;
 use Mollie\Shopware\Component\Payment\ExpressMethod\VisibilityRestrictionCollection;
+use Mollie\Shopware\Component\Router\Exception\RedirectUrlException;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
 use Mollie\Shopware\Component\Settings\Struct\ExpressComponentsSettings;
 use Mollie\Shopware\Unit\Builder\CartBuilder;
 use Mollie\Shopware\Unit\Builder\CustomerBuilder;
@@ -15,6 +17,7 @@ use Mollie\Shopware\Unit\Fake\FakeSalesChannelContext;
 use Mollie\Shopware\Unit\Fake\FakeSettingsService;
 use Mollie\Shopware\Unit\Payment\ExpressComponents\Fake\FakeSessionBuilder;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Shopware\Core\Checkout\Cart\Cart;
 use Shopware\Core\Checkout\Cart\LineItem\LineItem;
@@ -49,6 +52,45 @@ final class CreateSessionRouteTest extends TestCase
         $this->assertSame('ses_cart', $response->getSessionId());
         $this->assertSame('token_cart', $response->getClientAccessToken());
         $this->assertSame($cart, $this->sessionBuilder->getLastCart());
+    }
+
+    public function testReturnUrlsOnTheSalesChannelDomainGetASession(): void
+    {
+        $request = new Request([
+            'finishUrl' => 'https://frontend.example/checkout/finish/{orderId}',
+            'errorUrl' => 'https://frontend.example/checkout/failed/{orderId}',
+        ]);
+
+        $response = $this->route(enabled: true)->createSession($request, $this->contextWithDomain(), $this->cartWithLineItem());
+
+        $this->assertSame('ses_cart', $response->getSessionId());
+    }
+
+    /**
+     * @param array<string, string> $parameters
+     */
+    #[DataProvider('foreignReturnUrls')]
+    public function testAReturnUrlOutsideTheSalesChannelIsRejectedBeforeTheShopperPays(array $parameters): void
+    {
+        try {
+            $this->route(enabled: true)->createSession(new Request($parameters), $this->contextWithDomain(), $this->cartWithLineItem());
+            $this->fail('The foreign return url was accepted');
+        } catch (RedirectUrlException) {
+            $this->assertFalse($this->sessionBuilder->wasCalled());
+        }
+    }
+
+    /**
+     * The finish route would reject the urls too, but only after the shopper paid.
+     *
+     * @return array<string, array{array<string, string>}>
+     */
+    public static function foreignReturnUrls(): array
+    {
+        return [
+            'finish url' => [['finishUrl' => 'https://evil.example/checkout/finish/{orderId}']],
+            'error url' => [['errorUrl' => 'https://evil.example/checkout/failed']],
+        ];
     }
 
     public function testNoSessionIsCreatedWhenTheComponentIsSwitchedOff(): void
@@ -188,13 +230,22 @@ final class CreateSessionRouteTest extends TestCase
         return new CreateSessionRoute(
             new FakeSettingsService(expressComponentsSettings: $settings),
             $this->sessionBuilder,
-            $this->orderRepository
+            $this->orderRepository,
+            new RedirectUrlValidator()
         );
     }
 
     private function orderRequest(): Request
     {
         return new Request([CreateSessionRoute::ORDER_ID_PARAMETER => self::ORDER_ID]);
+    }
+
+    private function contextWithDomain(): FakeSalesChannelContext
+    {
+        $context = new FakeSalesChannelContext();
+        $context->setDomainUrls('https://frontend.example');
+
+        return $context;
     }
 
     private function loggedInContext(): FakeSalesChannelContext

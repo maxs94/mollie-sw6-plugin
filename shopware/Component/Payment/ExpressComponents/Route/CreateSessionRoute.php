@@ -4,8 +4,11 @@ declare(strict_types=1);
 namespace Mollie\Shopware\Component\Payment\ExpressComponents\Route;
 
 use Mollie\Shopware\Component\Payment\ExpressComponents\ExpressComponentsException;
+use Mollie\Shopware\Component\Payment\ExpressComponents\FinishUrls;
 use Mollie\Shopware\Component\Payment\ExpressComponents\SessionBuilder;
 use Mollie\Shopware\Component\Payment\ExpressComponents\SessionBuilderInterface;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
+use Mollie\Shopware\Component\Router\RedirectUrlValidatorInterface;
 use Mollie\Shopware\Component\Settings\AbstractSettingsService;
 use Mollie\Shopware\Component\Settings\SettingsService;
 use Shopware\Core\Checkout\Cart\Cart;
@@ -37,7 +40,9 @@ final class CreateSessionRoute extends AbstractCreateSessionRoute
         #[Autowire(service: SessionBuilder::class)]
         private SessionBuilderInterface $sessionBuilder,
         #[Autowire(service: 'order.repository')]
-        private EntityRepository $orderRepository
+        private EntityRepository $orderRepository,
+        #[Autowire(service: RedirectUrlValidator::class)]
+        private RedirectUrlValidatorInterface $redirectUrlValidator
     ) {
     }
 
@@ -56,6 +61,10 @@ final class CreateSessionRoute extends AbstractCreateSessionRoute
         if ($settings->isEnabled() === false) {
             return new CreateSessionResponse(false, $restrictions);
         }
+
+        $finishUrls = FinishUrls::fromRequest($request);
+        $this->redirectUrlValidator->validate($finishUrls->getFinishUrlTemplate(), $salesChannelContext);
+        $this->redirectUrlValidator->validate($finishUrls->getErrorUrlTemplate(), $salesChannelContext);
 
         $payableOrder = $this->resolveOrder($request, $salesChannelContext, $order);
         if ($payableOrder instanceof OrderEntity) {

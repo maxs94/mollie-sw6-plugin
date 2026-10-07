@@ -1,4 +1,5 @@
 # Unreleased
+- Changed: Return URLs passed by headless shops must point to a domain of their sales channel.
 
 # 5.7.0
 - Added: The webhook retries writing the payment status on a database deadlock.

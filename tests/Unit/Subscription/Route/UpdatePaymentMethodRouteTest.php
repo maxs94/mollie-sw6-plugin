@@ -8,6 +8,8 @@ use Mollie\Shopware\Component\Mollie\Payment;
 use Mollie\Shopware\Component\Mollie\PaymentStatus;
 use Mollie\Shopware\Component\Mollie\SubscriptionStatus;
 use Mollie\Shopware\Component\Payment\PaymentHandlerLocator;
+use Mollie\Shopware\Component\Router\Exception\RedirectUrlException;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
 use Mollie\Shopware\Component\Settings\Struct\SubscriptionSettings;
 use Mollie\Shopware\Component\Subscription\Action\UpdatePaymentMethodAction;
 use Mollie\Shopware\Component\Subscription\DAL\Subscription\SubscriptionEntity;
@@ -117,6 +119,22 @@ final class UpdatePaymentMethodRouteTest extends TestCase
         );
 
         self::assertSame('https://shop.test/account/subscriptions', $this->mollieGateway->getCreatePayloads()[0]->getRedirectUrl());
+    }
+
+    public function testStartRejectsARedirectUrlOutsideTheSalesChannel(): void
+    {
+        $route = $this->buildRoute();
+
+        try {
+            $route->start(
+                self::SUBSCRIPTION_ID,
+                new RequestDataBag(['redirectUrl' => 'https://evil.example/account/subscriptions']),
+                $this->authenticatedContext()
+            );
+            self::fail('The foreign redirect url was accepted');
+        } catch (RedirectUrlException) {
+            self::assertSame([], $this->mollieGateway->getCreatePayloads());
+        }
     }
 
     public function testTheSubscriptionIdFromTheUrlIsLoweredBeforeTheLookup(): void
@@ -242,7 +260,8 @@ final class UpdatePaymentMethodRouteTest extends TestCase
         return new UpdatePaymentMethodRoute(
             $settings ?? new FakeSettingsService(subscriptionSettings: new SubscriptionSettings(enabled: true)),
             $dataService ?? new FakeSubscriptionDataService($subscriptionData),
-            $action
+            $action,
+            new RedirectUrlValidator()
         );
     }
 
@@ -299,6 +318,7 @@ final class UpdatePaymentMethodRouteTest extends TestCase
 
         $context = new FakeSalesChannelContext();
         $context->setCustomer($customer);
+        $context->setDomainUrls('https://shop.test');
 
         return $context;
     }

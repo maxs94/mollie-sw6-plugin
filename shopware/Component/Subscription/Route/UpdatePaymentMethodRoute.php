@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Mollie\Shopware\Component\Subscription\Route;
 
 use Mollie\Shopware\Component\Mollie\SubscriptionStatus;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
+use Mollie\Shopware\Component\Router\RedirectUrlValidatorInterface;
 use Mollie\Shopware\Component\Settings\AbstractSettingsService;
 use Mollie\Shopware\Component\Settings\SettingsService;
 use Mollie\Shopware\Component\Subscription\Action\UpdatePaymentMethodAction;
@@ -28,7 +30,9 @@ final class UpdatePaymentMethodRoute extends AbstractUpdatePaymentMethodRoute
         private readonly AbstractSettingsService $settingsService,
         #[Autowire(service: SubscriptionDataService::class)]
         private readonly SubscriptionDataServiceInterface $subscriptionDataService,
-        private readonly UpdatePaymentMethodAction $action
+        private readonly UpdatePaymentMethodAction $action,
+        #[Autowire(service: RedirectUrlValidator::class)]
+        private readonly RedirectUrlValidatorInterface $redirectUrlValidator
     ) {
     }
 
@@ -61,6 +65,7 @@ final class UpdatePaymentMethodRoute extends AbstractUpdatePaymentMethodRoute
         $this->assertPaymentUpdateAllowed($subscription);
 
         $redirectUrl = (string) $data->get('redirectUrl', '');
+        $this->redirectUrlValidator->validate($redirectUrl, $context);
 
         $payment = $this->action->start($subscription, $orderNumber, $redirectUrl, $context->getContext());
 

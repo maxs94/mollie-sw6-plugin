@@ -6,6 +6,8 @@ namespace Mollie\Shopware\Unit\Payment\ExpressComponents\Route;
 use Mollie\Shopware\Component\Payment\ExpressComponents\ExpressComponentsException;
 use Mollie\Shopware\Component\Payment\ExpressComponents\Route\FinishCheckoutResponse;
 use Mollie\Shopware\Component\Payment\ExpressComponents\Route\FinishCheckoutRoute;
+use Mollie\Shopware\Component\Router\Exception\RedirectUrlException;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
 use Mollie\Shopware\Component\Settings\Struct\ExpressComponentsSettings;
 use Mollie\Shopware\Unit\Fake\FakeLogger;
 use Mollie\Shopware\Unit\Fake\FakeSalesChannelContext;
@@ -14,6 +16,7 @@ use Mollie\Shopware\Unit\Fake\FakeSettingsService;
 use Mollie\Shopware\Unit\Payment\ExpressComponents\Fake\FakeCartCheckoutFinisher;
 use Mollie\Shopware\Unit\Payment\ExpressComponents\Fake\FakeOrderCheckoutFinisher;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Shopware\Core\Framework\Plugin\Exception\DecorationPatternException;
 use Symfony\Component\HttpFoundation\Request;
@@ -36,7 +39,9 @@ final class FinishCheckoutRouteTest extends TestCase
     {
         $this->cartCheckoutFinisher = new FakeCartCheckoutFinisher();
         $this->orderCheckoutFinisher = new FakeOrderCheckoutFinisher();
-        $this->salesChannelContextService = new FakeSalesChannelContextService(new FakeSalesChannelContext(self::SALES_CHANNEL_ID));
+        $salesChannelContext = new FakeSalesChannelContext(self::SALES_CHANNEL_ID);
+        $salesChannelContext->setDomainUrls('https://frontend.example');
+        $this->salesChannelContextService = new FakeSalesChannelContextService($salesChannelContext);
     }
 
     public function testTheCheckoutIsFinishedForTheCartOfTheToken(): void
@@ -148,6 +153,63 @@ final class FinishCheckoutRouteTest extends TestCase
         ]));
     }
 
+    public function testAnErrorPageOutsideTheSalesChannelIsNotFollowed(): void
+    {
+        $this->expectException(RedirectUrlException::class);
+
+        $this->route(enabled: false)->finish(self::SALES_CHANNEL_ID, $this->request([
+            FinishCheckoutRoute::CART_TOKEN_PARAMETER => 'cart-token',
+            'errorUrl' => 'https://evil.example/checkout/failed',
+        ]));
+    }
+
+    /**
+     * On the error path the order id comes from the request, so a url that looks like the shop's
+     * as a template can point elsewhere once it is filled in.
+     */
+    public function testAnErrorPageIsCheckedAfterTheOrderIdIsFilledIn(): void
+    {
+        $this->expectException(RedirectUrlException::class);
+
+        $this->route(enabled: false)->finish(self::SALES_CHANNEL_ID, $this->request([
+            FinishCheckoutRoute::CART_TOKEN_PARAMETER => 'cart-token',
+            FinishCheckoutRoute::ORDER_ID_PARAMETER => 'evil.example#',
+            'errorUrl' => 'https://{orderId}@frontend.example/checkout/failed',
+        ]));
+    }
+
+    /**
+     * The storefront controller and the payment handling reach the urls through finishCheckout(), not finish().
+     */
+    #[DataProvider('foreignReturnUrls')]
+    public function testAReturnUrlOutsideTheSalesChannelIsRejectedBeforeTheCheckoutIsFinished(string $parameter, string $url): void
+    {
+        $route = $this->route(enabled: true);
+        $salesChannelContext = new FakeSalesChannelContext();
+        $salesChannelContext->setDomainUrls('https://frontend.example');
+
+        try {
+            $route->finishCheckout($this->request([
+                FinishCheckoutRoute::CART_TOKEN_PARAMETER => 'cart-token',
+                $parameter => $url,
+            ]), $salesChannelContext);
+            $this->fail('The foreign finish url was accepted');
+        } catch (RedirectUrlException) {
+            $this->assertFalse($this->cartCheckoutFinisher->wasCalled());
+        }
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function foreignReturnUrls(): array
+    {
+        return [
+            'finish url' => ['finishUrl', 'https://evil.example/checkout/finish'],
+            'error url' => ['errorUrl', 'https://evil.example/checkout/failed'],
+        ];
+    }
+
     public function testTheRouteCannotBeDecorated(): void
     {
         $this->expectException(DecorationPatternException::class);
@@ -162,6 +224,7 @@ final class FinishCheckoutRouteTest extends TestCase
             $this->cartCheckoutFinisher,
             $this->orderCheckoutFinisher,
             $this->salesChannelContextService,
+            new RedirectUrlValidator(),
             new FakeLogger()
         );
     }

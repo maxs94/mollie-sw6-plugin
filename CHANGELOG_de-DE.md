@@ -1,4 +1,5 @@
 # Unreleased
+- Geändert: Rücksprung-URLs aus Headless-Shops müssen auf eine Domain ihres Verkaufskanals zeigen.
 
 # 5.7.0
 - Hinzugefügt: Der Webhook wiederholt das Schreiben des Zahlungsstatus bei einem Datenbank-Deadlock.

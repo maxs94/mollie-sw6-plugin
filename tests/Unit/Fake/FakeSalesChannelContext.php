@@ -9,6 +9,8 @@ use Shopware\Core\Checkout\Payment\PaymentMethodEntity;
 use Shopware\Core\Checkout\Shipping\ShippingMethodEntity;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\System\Currency\CurrencyEntity;
+use Shopware\Core\System\SalesChannel\Aggregate\SalesChannelDomain\SalesChannelDomainCollection;
+use Shopware\Core\System\SalesChannel\Aggregate\SalesChannelDomain\SalesChannelDomainEntity;
 use Shopware\Core\System\SalesChannel\SalesChannelContext;
 use Shopware\Core\System\SalesChannel\SalesChannelEntity;
 
@@ -24,6 +26,9 @@ final class FakeSalesChannelContext extends SalesChannelContext
     private ?CurrencyEntity $fakeCurrency = null;
     private ?ShippingLocation $fakeShippingLocation = null;
 
+    /** @var list<string> */
+    private array $fakeDomainUrls = [];
+
     public function __construct(
         string $salesChannelId = 'sales-channel-id',
         string $token = 'cart-token',
@@ -32,6 +37,11 @@ final class FakeSalesChannelContext extends SalesChannelContext
         $this->fakeSalesChannelId = $salesChannelId;
         $this->fakeToken = $token;
         $this->fakeContext = $context ?? Context::createDefaultContext();
+    }
+
+    public function setDomainUrls(string ...$urls): void
+    {
+        $this->fakeDomainUrls = array_values($urls);
     }
 
     public function setCustomer(?CustomerEntity $customer): void
@@ -73,6 +83,10 @@ final class FakeSalesChannelContext extends SalesChannelContext
         $salesChannel->setId($this->fakeSalesChannelId);
         $salesChannel->setName('Fake Sales Channel');
         $salesChannel->setLanguageId($this->fakeContext->getLanguageId());
+
+        if (count($this->fakeDomainUrls) > 0) {
+            $salesChannel->setDomains($this->buildDomains());
+        }
 
         return $salesChannel;
     }
@@ -160,5 +174,18 @@ final class FakeSalesChannelContext extends SalesChannelContext
         }
 
         return $this->fakeShippingLocation;
+    }
+
+    private function buildDomains(): SalesChannelDomainCollection
+    {
+        $domains = new SalesChannelDomainCollection();
+        foreach ($this->fakeDomainUrls as $index => $url) {
+            $domain = new SalesChannelDomainEntity();
+            $domain->setId('domain-' . $index);
+            $domain->setUrl($url);
+            $domains->add($domain);
+        }
+
+        return $domains;
     }
 }

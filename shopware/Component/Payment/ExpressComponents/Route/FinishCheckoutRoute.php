@@ -9,6 +9,8 @@ use Mollie\Shopware\Component\Payment\ExpressComponents\ExpressComponentsExcepti
 use Mollie\Shopware\Component\Payment\ExpressComponents\FinishUrls;
 use Mollie\Shopware\Component\Payment\ExpressComponents\OrderCheckoutFinisher;
 use Mollie\Shopware\Component\Payment\ExpressComponents\OrderCheckoutFinisherInterface;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
+use Mollie\Shopware\Component\Router\RedirectUrlValidatorInterface;
 use Mollie\Shopware\Component\Settings\AbstractSettingsService;
 use Mollie\Shopware\Component\Settings\SettingsService;
 use Psr\Log\LoggerInterface;
@@ -54,6 +56,8 @@ final class FinishCheckoutRoute extends AbstractFinishCheckoutRoute
         private OrderCheckoutFinisherInterface $orderCheckoutFinisher,
         #[Autowire(service: SalesChannelContextService::class)]
         private SalesChannelContextServiceInterface $salesChannelContextService,
+        #[Autowire(service: RedirectUrlValidator::class)]
+        private RedirectUrlValidatorInterface $redirectUrlValidator,
         #[Autowire(service: 'monolog.logger.mollie')]
         private LoggerInterface $logger
     ) {
@@ -71,8 +75,9 @@ final class FinishCheckoutRoute extends AbstractFinishCheckoutRoute
         $cartToken = (string) $request->get(self::CART_TOKEN_PARAMETER, '');
         $orderId = (string) $request->get(self::ORDER_ID_PARAMETER, '');
 
+        $salesChannelContext = $this->buildContext($salesChannelId, $cartToken);
+
         try {
-            $salesChannelContext = $this->buildContext($salesChannelId, $cartToken);
             $response = $this->finishCheckout($request, $salesChannelContext);
 
             $redirectUrl = $response->getRedirectUrl();
@@ -94,6 +99,8 @@ final class FinishCheckoutRoute extends AbstractFinishCheckoutRoute
                 throw $exception;
             }
 
+            $this->redirectUrlValidator->validate($errorUrl, $salesChannelContext);
+
             return new RedirectResponse($errorUrl);
         }
     }
@@ -106,6 +113,10 @@ final class FinishCheckoutRoute extends AbstractFinishCheckoutRoute
         if ($settings->isEnabled() === false) {
             throw ExpressComponentsException::notEnabled($salesChannelId);
         }
+
+        $finishUrls = FinishUrls::fromRequest($request);
+        $this->redirectUrlValidator->validate($finishUrls->getFinishUrlTemplate(), $salesChannelContext);
+        $this->redirectUrlValidator->validate($finishUrls->getErrorUrlTemplate(), $salesChannelContext);
 
         // the edit order page has no cart, there the order takes the place of the cart token
         $orderId = (string) $request->get(self::ORDER_ID_PARAMETER, '');

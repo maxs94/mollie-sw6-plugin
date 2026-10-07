@@ -6,6 +6,8 @@ namespace Mollie\Shopware\Component\Payment\PayPalExpress\Route;
 use Mollie\Shopware\Component\Mollie\Gateway\SessionGateway;
 use Mollie\Shopware\Component\Mollie\Gateway\SessionGatewayInterface;
 use Mollie\Shopware\Component\Payment\PayPalExpress\PaypalExpressException;
+use Mollie\Shopware\Component\Router\RedirectUrlValidator;
+use Mollie\Shopware\Component\Router\RedirectUrlValidatorInterface;
 use Mollie\Shopware\Component\Settings\AbstractSettingsService;
 use Mollie\Shopware\Component\Settings\SettingsService;
 use Mollie\Shopware\Mollie;
@@ -30,6 +32,8 @@ final class StartCheckoutRoute extends AbstractStartCheckoutRoute
         #[Autowire(service: SessionGateway::class)]
         private SessionGatewayInterface $sessionGateway,
         private CartService $cartService,
+        #[Autowire(service: RedirectUrlValidator::class)]
+        private RedirectUrlValidatorInterface $redirectUrlValidator,
     ) {
     }
 
@@ -56,6 +60,9 @@ final class StartCheckoutRoute extends AbstractStartCheckoutRoute
 
         $redirectUrl = trim((string) $request->get(self::REDIRECT_URL_PARAMETER, ''));
         $cancelUrl = trim((string) $request->get(self::CANCEL_URL_PARAMETER, ''));
+
+        $this->redirectUrlValidator->validate($redirectUrl, $salesChannelContext);
+        $this->redirectUrlValidator->validate($cancelUrl, $salesChannelContext);
 
         $session = $this->sessionGateway->createPaypalExpressSession($cart, $salesChannelContext, $redirectUrl, $cancelUrl);
 
