@@ -1,4 +1,5 @@
 # Unreleased
+- Behoben: Ein Abo beim Bearbeiten auf "gekündigt" zu setzen erfordert das Recht, Abos zu kündigen, und das Speichern löscht die Mollie-ID nicht mehr.
 
 # 5.7.0
 - Hinzugefügt: Der Webhook wiederholt das Schreiben des Zahlungsstatus bei einem Datenbank-Deadlock.

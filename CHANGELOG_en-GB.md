@@ -1,4 +1,5 @@
 # Unreleased
+- Fixed: Setting a subscription to "canceled" while editing it requires the permission to cancel subscriptions, and saving the edit no longer clears the Mollie ID.
 
 # 5.7.0
 - Added: The webhook retries writing the payment status on a database deadlock.

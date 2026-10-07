@@ -30,6 +30,8 @@ use Symfony\Component\Routing\Attribute\Route;
 #[Route(defaults: [PlatformRequest::ATTRIBUTE_ROUTE_SCOPE => [ApiRouteScope::ID]])]
 final class ApiController extends AbstractController
 {
+    private const CANCEL_PRIVILEGE = 'mollie_subscription_custom:cancel';
+
     private const EDITABLE_STATUSES = [
         SubscriptionStatus::PENDING,
         SubscriptionStatus::ACTIVE,
@@ -89,12 +91,17 @@ final class ApiController extends AbstractController
             return $this->buildErrorResponse(sprintf('Subscription with id %s was not found', $subscriptionId), Response::HTTP_NOT_FOUND);
         }
 
-        $status = (string) $request->request->get('status', $subscription->getStatus());
-        $mollieId = trim((string) $request->request->get('mollieId', $subscription->getMollieId()));
-        $orderId = (string) $request->request->get('orderId', $subscription->getOrderId());
+        $status = $this->readField($request, 'status', $subscription->getStatus());
+        $mollieId = $this->readField($request, 'mollieId', $subscription->getMollieId());
+        $orderId = $this->readField($request, 'orderId', $subscription->getOrderId());
 
         if (! in_array($status, self::EDITABLE_STATUSES, true)) {
             return $this->buildErrorResponse(sprintf('Subscription status %s is not valid', $status), Response::HTTP_BAD_REQUEST);
+        }
+
+        $isNewlyCanceled = $status === SubscriptionStatus::CANCELED && $status !== $subscription->getStatus();
+        if ($isNewlyCanceled && ! $context->isAllowed(self::CANCEL_PRIVILEGE)) {
+            return $this->buildErrorResponse(sprintf('Setting the status %s requires the privilege %s', $status, self::CANCEL_PRIVILEGE), Response::HTTP_FORBIDDEN);
         }
 
         $upsert = ['id' => $subscriptionId];
@@ -152,6 +159,13 @@ final class ApiController extends AbstractController
         $this->subscriptionRepository->upsert([$upsert], $context);
 
         return new JsonResponse(['success' => true]);
+    }
+
+    private function readField(Request $request, string $field, string $currentValue): string
+    {
+        $value = trim((string) $request->request->get($field));
+
+        return $value === '' ? $currentValue : $value;
     }
 
     private function buildErrorResponse(string $error, int $status): JsonResponse
